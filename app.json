@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "app_city",
-    "slug": "app_city",
+    "name": "GymFit",
+    "slug": "gymfit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "appcity",
+    "scheme": "gymfit",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
