@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -12,34 +12,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-
-interface PersonalRecord {
-  id: string;
-  lift: string;
-  weightKg: number;
-  date: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}
-
-interface WeightEntry {
-  id: string;
-  weightKg: number;
-  date: string;
-}
-
-const INITIAL_PRS: PersonalRecord[] = [
-  { id: '1', lift: 'Press de Banca Plano', weightKg: 95, date: '28 Sep', icon: 'barbell' },
-  { id: '2', lift: 'Sentadilla Libre (Squat)', weightKg: 130, date: '25 Sep', icon: 'fitness' },
-  { id: '3', lift: 'Peso Muerto Convencional', weightKg: 160, date: '18 Sep', icon: 'trophy' },
-  { id: '4', lift: 'Press Militar con Barra', weightKg: 62.5, date: '22 Sep', icon: 'shield-checkmark' },
-];
-
-const INITIAL_WEIGHT_LOG: WeightEntry[] = [
-  { id: 'w1', weightKg: 78.4, date: 'Hoy, 08:30' },
-  { id: 'w2', weightKg: 78.8, date: 'Hace 3 días' },
-  { id: 'w3', weightKg: 79.2, date: 'Hace 1 semana' },
-  { id: 'w4', weightKg: 80.0, date: 'Hace 2 semanas' },
-];
+import {
+  PersonalRecord,
+  WeightEntry,
+  DEFAULT_PRS,
+  DEFAULT_WEIGHT_LOG,
+  subscribePRs,
+  savePRs,
+  subscribeWeightLog,
+  saveWeightLog,
+} from '@/services/gymStorage';
+import { SyncBadge } from '@/components/SyncBadge';
 
 const WEEK_DAYS = [
   { day: 'Lun', done: true },
@@ -55,8 +38,8 @@ export default function ProgressScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
-  const [prs, setPrs] = useState<PersonalRecord[]>(INITIAL_PRS);
-  const [weightLog, setWeightLog] = useState<WeightEntry[]>(INITIAL_WEIGHT_LOG);
+  const [prs, setPrs] = useState<PersonalRecord[]>(DEFAULT_PRS);
+  const [weightLog, setWeightLog] = useState<WeightEntry[]>(DEFAULT_WEIGHT_LOG);
 
   // Modal para nuevo PR
   const [prModalVisible, setPrModalVisible] = useState(false);
@@ -66,6 +49,20 @@ export default function ProgressScreen() {
   // Modal para nuevo Peso Corporal
   const [weightModalVisible, setWeightModalVisible] = useState(false);
   const [inputWeight, setInputWeight] = useState('78.0');
+
+  useEffect(() => {
+    const unsubPRs = subscribePRs((data) => {
+      if (data && data.length > 0) setPrs(data);
+    });
+    const unsubWeight = subscribeWeightLog((data) => {
+      if (data && data.length > 0) setWeightLog(data);
+    });
+
+    return () => {
+      unsubPRs();
+      unsubWeight();
+    };
+  }, []);
 
   const currentWeight = weightLog[0]?.weightKg ?? 78.0;
   const initialWeight = 82.0;
@@ -78,14 +75,14 @@ export default function ProgressScreen() {
       return;
     }
 
-    setPrs((prev) =>
-      prev.map((item) =>
-        item.id === selectedPrId
-          ? { ...item, weightKg: val, date: 'Hoy' }
-          : item
-      )
+    const updated = prs.map((item) =>
+      item.id === selectedPrId
+        ? { ...item, weightKg: val, date: 'Hoy' }
+        : item
     );
 
+    setPrs(updated);
+    savePRs(updated);
     setPrModalVisible(false);
     setNewPrWeight('');
   };
@@ -103,7 +100,9 @@ export default function ProgressScreen() {
       date: 'Hoy',
     };
 
-    setWeightLog([newEntry, ...weightLog]);
+    const updated = [newEntry, ...weightLog];
+    setWeightLog(updated);
+    saveWeightLog(updated);
     setWeightModalVisible(false);
   };
 
@@ -114,8 +113,13 @@ export default function ProgressScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
-        <Text style={[styles.subtitle, { color: theme.subtext }]}>MÉTRICAS Y LOGROS</Text>
-        <Text style={[styles.title, { color: theme.text }]}>Tu Progreso Físico</Text>
+        <View style={styles.headerTitleRow}>
+          <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+            <Text style={[styles.subtitle, { color: theme.subtext }]}>MÉTRICAS Y LOGROS</Text>
+            <Text style={[styles.title, { color: theme.text }]}>Tu Progreso Físico</Text>
+          </View>
+          <SyncBadge />
+        </View>
       </View>
 
       {/* Tarjeta de Racha Semanal */}
@@ -180,7 +184,11 @@ export default function ProgressScreen() {
           >
             <View style={styles.prHeader}>
               <View style={[styles.prIconBox, { backgroundColor: theme.tint + '15' }]}>
-                <Ionicons name={pr.icon} size={20} color={theme.tint} />
+                <Ionicons
+                  name={(pr.icon as keyof typeof Ionicons.glyphMap) || 'barbell'}
+                  size={20}
+                  color={theme.tint}
+                />
               </View>
               <Text style={[styles.prDate, { color: theme.subtext }]}>{pr.date}</Text>
             </View>
@@ -320,6 +328,12 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 20,
+    backgroundColor: 'transparent',
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'transparent',
   },
   subtitle: {

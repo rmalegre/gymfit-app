@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -9,86 +9,23 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Text, View, useThemeColor } from '@/components/Themed';
+import * as Linking from 'expo-linking';
+import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-
-interface Exercise {
-  id: string;
-  name: string;
-  muscle: string;
-  sets: number;
-  reps: string;
-  weightKg: number;
-  completed: boolean;
-}
-
-interface Routine {
-  id: string;
-  name: string;
-  durationMin: number;
-  intensity: 'Media' | 'Alta' | 'Intensa';
-  exercises: Exercise[];
-}
-
-const INITIAL_ROUTINES: Routine[] = [
-  {
-    id: 'chest_triceps',
-    name: 'Pecho y Tríceps',
-    durationMin: 55,
-    intensity: 'Alta',
-    exercises: [
-      { id: '1', name: 'Press de Banca Plano con Barra', muscle: 'Pectoral', sets: 4, reps: '8-10', weightKg: 75, completed: false },
-      { id: '2', name: 'Press Inclinado con Mancuernas', muscle: 'Pectoral Superior', sets: 3, reps: '10-12', weightKg: 26, completed: false },
-      { id: '3', name: 'Aperturas en Polea (Cruces)', muscle: 'Pectoral Aislado', sets: 3, reps: '12-15', weightKg: 15, completed: false },
-      { id: '4', name: 'Fondos en Paralelas (Dips)', muscle: 'Tríceps / Pecho', sets: 3, reps: '10-12', weightKg: 0, completed: false },
-      { id: '5', name: 'Extensión de Tríceps en Polea Alta', muscle: 'Tríceps', sets: 4, reps: '12', weightKg: 25, completed: false },
-    ],
-  },
-  {
-    id: 'back_biceps',
-    name: 'Espalda y Bíceps',
-    durationMin: 60,
-    intensity: 'Alta',
-    exercises: [
-      { id: 'b1', name: 'Dominadas Pronas (Pull-ups)', muscle: 'Dorsales', sets: 4, reps: '8-10', weightKg: 0, completed: false },
-      { id: 'b2', name: 'Remo con Barra 90°', muscle: 'Espalda Media', sets: 4, reps: '8-10', weightKg: 65, completed: false },
-      { id: 'b3', name: 'Jalón al Pecho en Polea', muscle: 'Dorsales', sets: 3, reps: '10-12', weightKg: 55, completed: false },
-      { id: 'b4', name: 'Curl de Bíceps con Barra Z', muscle: 'Bíceps', sets: 4, reps: '10-12', weightKg: 30, completed: false },
-      { id: 'b5', name: 'Curl Martillo con Mancuernas', muscle: 'Braquial', sets: 3, reps: '12', weightKg: 14, completed: false },
-    ],
-  },
-  {
-    id: 'legs_core',
-    name: 'Piernas y Glúteos',
-    durationMin: 65,
-    intensity: 'Intensa',
-    exercises: [
-      { id: 'l1', name: 'Sentadilla Libre con Barra (Squat)', muscle: 'Cuádriceps / Glúteos', sets: 4, reps: '6-8', weightKg: 100, completed: false },
-      { id: 'l2', name: 'Prensa Inclinada 45°', muscle: 'Cuádriceps', sets: 4, reps: '10-12', weightKg: 180, completed: false },
-      { id: 'l3', name: 'Peso Muerto Rumano', muscle: 'Isquiosurales', sets: 4, reps: '8-10', weightKg: 85, completed: false },
-      { id: 'l4', name: 'Elevación de Gemelos en Máquina', muscle: 'Pantorrillas', sets: 4, reps: '15', weightKg: 50, completed: false },
-      { id: 'l5', name: 'Plancha Abdominal Activa', muscle: 'Core', sets: 3, reps: '45 seg', weightKg: 0, completed: false },
-    ],
-  },
-  {
-    id: 'shoulders_arms',
-    name: 'Hombros y Brazos',
-    durationMin: 50,
-    intensity: 'Media',
-    exercises: [
-      { id: 's1', name: 'Press Militar de Hombros con Barra', muscle: 'Deltoides Anterior', sets: 4, reps: '8-10', weightKg: 45, completed: false },
-      { id: 's2', name: 'Elevaciones Laterales con Mancuerna', muscle: 'Deltoides Lateral', sets: 4, reps: '12-15', weightKg: 12, completed: false },
-      { id: 's3', name: 'Pájaros para Deltoides Posterior', muscle: 'Deltoides Posterior', sets: 3, reps: '15', weightKg: 10, completed: false },
-      { id: 's4', name: 'Superserie Bíceps/Tríceps', muscle: 'Brazos', sets: 3, reps: '12', weightKg: 20, completed: false },
-    ],
-  },
-];
+import {
+  Routine,
+  Exercise,
+  DEFAULT_ROUTINES,
+  subscribeRoutines,
+  saveRoutines,
+} from '@/services/gymStorage';
+import { SyncBadge } from '@/components/SyncBadge';
 
 export default function WorkoutsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
-  const [routines, setRoutines] = useState<Routine[]>(INITIAL_ROUTINES);
+  const [routines, setRoutines] = useState<Routine[]>(DEFAULT_ROUTINES);
   const [selectedRoutineId, setSelectedRoutineId] = useState<string>('chest_triceps');
 
   // Modal para añadir ejercicio
@@ -99,13 +36,30 @@ export default function WorkoutsScreen() {
   const [newReps, setNewReps] = useState('10');
   const [newWeight, setNewWeight] = useState('20');
 
+  useEffect(() => {
+    const unsubscribe = subscribeRoutines((data) => {
+      if (data && data.length > 0) {
+        setRoutines(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const updateRoutinesAndPersist = (updater: (prev: Routine[]) => Routine[]) => {
+    setRoutines((prev) => {
+      const next = updater(prev);
+      saveRoutines(next);
+      return next;
+    });
+  };
+
   const currentRoutine = routines.find((r) => r.id === selectedRoutineId) ?? routines[0];
-  const completedCount = currentRoutine.exercises.filter((e) => e.completed).length;
-  const totalCount = currentRoutine.exercises.length;
+  const completedCount = currentRoutine ? currentRoutine.exercises.filter((e) => e.completed).length : 0;
+  const totalCount = currentRoutine ? currentRoutine.exercises.length : 0;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const toggleExercise = (exerciseId: string) => {
-    setRoutines((prev) =>
+    updateRoutinesAndPersist((prev) =>
       prev.map((routine) => {
         if (routine.id !== selectedRoutineId) return routine;
         return {
@@ -119,7 +73,7 @@ export default function WorkoutsScreen() {
   };
 
   const updateWeight = (exerciseId: string, delta: number) => {
-    setRoutines((prev) =>
+    updateRoutinesAndPersist((prev) =>
       prev.map((routine) => {
         if (routine.id !== selectedRoutineId) return routine;
         return {
@@ -134,6 +88,18 @@ export default function WorkoutsScreen() {
     );
   };
 
+  const openExerciseVideo = async (exerciseName: string) => {
+    const query = `${exerciseName} técnica correcta tutorial corto shorts`;
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.warn('[Videos] No se pudo abrir YouTube:', error);
+      Alert.alert('No se pudo abrir YouTube', 'Comprueba tu conexión e inténtalo de nuevo.');
+    }
+  };
+
   const resetProgress = () => {
     Alert.alert(
       'Reiniciar Rutina',
@@ -144,7 +110,7 @@ export default function WorkoutsScreen() {
           text: 'Reiniciar',
           style: 'destructive',
           onPress: () => {
-            setRoutines((prev) =>
+            updateRoutinesAndPersist((prev) =>
               prev.map((routine) =>
                 routine.id === selectedRoutineId
                   ? {
@@ -176,7 +142,7 @@ export default function WorkoutsScreen() {
       completed: false,
     };
 
-    setRoutines((prev) =>
+    updateRoutinesAndPersist((prev) =>
       prev.map((routine) =>
         routine.id === selectedRoutineId
           ? { ...routine, exercises: [...routine.exercises, newEx] }
@@ -205,9 +171,12 @@ export default function WorkoutsScreen() {
             <Text style={[styles.greeting, { color: theme.subtext }]}>¡VAMOS CON TODO HOY! 💪</Text>
             <Text style={[styles.heroTitle, { color: theme.text }]}>Entrenamiento del Día</Text>
           </View>
-          <View style={[styles.flameBadge, { backgroundColor: theme.tint + '20' }]}>
-            <Ionicons name="flame" size={20} color={theme.tint} />
-            <Text style={[styles.flameText, { color: theme.tint }]}>Racha 5d</Text>
+          <View style={styles.badgeGroup}>
+            <SyncBadge />
+            <View style={[styles.flameBadge, { backgroundColor: theme.tint + '20' }]}>
+              <Ionicons name="flame" size={16} color={theme.tint} />
+              <Text style={[styles.flameText, { color: theme.tint }]}>5d</Text>
+            </View>
           </View>
         </View>
 
@@ -273,22 +242,24 @@ export default function WorkoutsScreen() {
       </ScrollView>
 
       {/* Info Rutina seleccionada */}
-      <View style={[styles.routineMetaCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-        <View style={styles.metaItem}>
-          <Ionicons name="time-outline" size={16} color={theme.subtext} />
-          <Text style={[styles.metaText, { color: theme.subtext }]}>{currentRoutine.durationMin} minutos</Text>
+      {currentRoutine && (
+        <View style={[styles.routineMetaCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+          <View style={styles.metaItem}>
+            <Ionicons name="time-outline" size={16} color={theme.subtext} />
+            <Text style={[styles.metaText, { color: theme.subtext }]}>{currentRoutine.durationMin} minutos</Text>
+          </View>
+          <View style={styles.metaDivider} />
+          <View style={styles.metaItem}>
+            <Ionicons name="speedometer-outline" size={16} color={theme.subtext} />
+            <Text style={[styles.metaText, { color: theme.subtext }]}>Intensidad: {currentRoutine.intensity}</Text>
+          </View>
+          <View style={styles.metaDivider} />
+          <View style={styles.metaItem}>
+            <Ionicons name="fitness-outline" size={16} color={theme.subtext} />
+            <Text style={[styles.metaText, { color: theme.subtext }]}>{currentRoutine.exercises.length} Ejercicios</Text>
+          </View>
         </View>
-        <View style={styles.metaDivider} />
-        <View style={styles.metaItem}>
-          <Ionicons name="speedometer-outline" size={16} color={theme.subtext} />
-          <Text style={[styles.metaText, { color: theme.subtext }]}>Intensidad: {currentRoutine.intensity}</Text>
-        </View>
-        <View style={styles.metaDivider} />
-        <View style={styles.metaItem}>
-          <Ionicons name="fitness-outline" size={16} color={theme.subtext} />
-          <Text style={[styles.metaText, { color: theme.subtext }]}>{currentRoutine.exercises.length} Ejercicios</Text>
-        </View>
-      </View>
+      )}
 
       {/* Lista de Ejercicios */}
       <View style={styles.exercisesHeaderRow}>
@@ -302,7 +273,7 @@ export default function WorkoutsScreen() {
         </TouchableOpacity>
       </View>
 
-      {currentRoutine.exercises.map((exercise) => {
+      {currentRoutine?.exercises.map((exercise) => {
         return (
           <View
             key={exercise.id}
@@ -320,7 +291,15 @@ export default function WorkoutsScreen() {
               onPress={() => toggleExercise(exercise.id)}
               activeOpacity={0.7}
             >
-              <View style={[styles.checkCircle, { borderColor: exercise.completed ? theme.tint : theme.subtext, backgroundColor: exercise.completed ? theme.tint : 'transparent' }]}>
+              <View
+                style={[
+                  styles.checkCircle,
+                  {
+                    borderColor: exercise.completed ? theme.tint : theme.subtext,
+                    backgroundColor: exercise.completed ? theme.tint : 'transparent',
+                  },
+                ]}
+              >
                 {exercise.completed && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
               </View>
 
@@ -367,6 +346,16 @@ export default function WorkoutsScreen() {
                 </View>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={[styles.exerciseVideoButton, { borderTopColor: theme.cardBorder }]}
+              onPress={() => openExerciseVideo(exercise.name)}
+              accessibilityRole="button"
+              accessibilityLabel={`Buscar video de técnica para ${exercise.name} en YouTube`}
+            >
+              <Ionicons name="play-circle-outline" size={20} color={theme.tint} />
+              <Text style={[styles.exerciseVideoText, { color: theme.tint }]}>Buscar video de técnica</Text>
+            </TouchableOpacity>
           </View>
         );
       })}
@@ -476,16 +465,21 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
   },
+  badgeGroup: {
+    alignItems: 'flex-end',
+    gap: 6,
+    backgroundColor: 'transparent',
+  },
   flameBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
     gap: 4,
   },
   flameText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   progressSection: {
@@ -630,6 +624,20 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderTopWidth: 1,
     backgroundColor: 'transparent',
+  },
+  exerciseVideoButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  exerciseVideoText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   exerciseMetricBadge: {
     backgroundColor: 'transparent',

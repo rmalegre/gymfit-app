@@ -1,24 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Switch,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import {
+  UserProfile,
+  DEFAULT_PROFILE,
+  subscribeProfile,
+  saveProfile,
+  isCloudSyncActive,
+} from '@/services/gymStorage';
+import { SyncBadge } from '@/components/SyncBadge';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [vibrationEnabled, setVibrationEnabled] = useState(true);
-  const [useKg, setUseKg] = useState(true);
-  const [selectedGoal, setSelectedGoal] = useState<'Hipertrofia' | 'Fuerza' | 'Definición'>('Hipertrofia');
+  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const isCloud = isCloudSyncActive();
+
+  useEffect(() => {
+    const unsub = subscribeProfile((data) => {
+      if (data) setProfile(data);
+    });
+    return () => unsub();
+  }, []);
+
+  const updateProfileAndPersist = (patch: Partial<UserProfile>) => {
+    const updated = { ...profile, ...patch };
+    setProfile(updated);
+    saveProfile(updated);
+  };
+
+  const showFirebaseHelp = () => {
+    Alert.alert(
+      'Configuración de Firebase',
+      'Para conectar tu propia base de datos Cloud Firestore:\n\n1. Ve a console.firebase.google.com y crea un proyecto.\n2. Crea una base de datos Cloud Firestore en modo producción o prueba.\n3. Añade una Web App y copia tus credenciales.\n4. Pégalas en "services/firebaseConfig.ts" o en tu archivo .env con el prefijo EXPO_PUBLIC_.'
+    );
+  };
 
   return (
     <ScrollView
@@ -33,11 +60,14 @@ export default function ProfileScreen() {
             <Ionicons name="barbell" size={36} color={theme.tint} />
           </View>
           <View style={{ flex: 1, backgroundColor: 'transparent', marginLeft: 14 }}>
-            <Text style={[styles.userName, { color: theme.text }]}>Atleta Fitness</Text>
+            <View style={styles.userTitleRow}>
+              <Text style={[styles.userName, { color: theme.text }]}>{profile.name}</Text>
+              <SyncBadge />
+            </View>
             <Text style={[styles.userHandle, { color: theme.subtext }]}>Plan de Entrenamiento Personal</Text>
             <View style={[styles.levelTag, { backgroundColor: theme.tint + '20' }]}>
               <Ionicons name="medal-outline" size={14} color={theme.tint} />
-              <Text style={[styles.levelText, { color: theme.tint }]}>Nivel Intermedio</Text>
+              <Text style={[styles.levelText, { color: theme.tint }]}>{profile.level}</Text>
             </View>
           </View>
         </View>
@@ -45,17 +75,17 @@ export default function ProfileScreen() {
         {/* Resumen de estadísticas globales */}
         <View style={[styles.statsRow, { borderTopColor: theme.cardBorder }]}>
           <View style={styles.statCol}>
-            <Text style={[styles.statNumber, { color: theme.text }]}>48</Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{profile.sessions}</Text>
             <Text style={[styles.statCaption, { color: theme.subtext }]}>Sesiones</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statCol}>
-            <Text style={[styles.statNumber, { color: theme.tint }]}>14.5 t</Text>
+            <Text style={[styles.statNumber, { color: theme.tint }]}>{profile.volumeTon} t</Text>
             <Text style={[styles.statCaption, { color: theme.subtext }]}>Volumen</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statCol}>
-            <Text style={[styles.statNumber, { color: theme.text }]}>5 días</Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{profile.streakDays} días</Text>
             <Text style={[styles.statCaption, { color: theme.subtext }]}>Racha</Text>
           </View>
         </View>
@@ -65,7 +95,7 @@ export default function ProfileScreen() {
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Objetivo Principal</Text>
       <View style={styles.goalsRow}>
         {(['Hipertrofia', 'Fuerza', 'Definición'] as const).map((goal) => {
-          const isSelected = selectedGoal === goal;
+          const isSelected = profile.goal === goal;
           return (
             <TouchableOpacity
               key={goal}
@@ -76,7 +106,7 @@ export default function ProfileScreen() {
                   borderColor: isSelected ? theme.tint : theme.cardBorder,
                 },
               ]}
-              onPress={() => setSelectedGoal(goal)}
+              onPress={() => updateProfileAndPersist({ goal })}
             >
               <Text
                 style={[
@@ -103,8 +133,8 @@ export default function ProfileScreen() {
             </View>
           </View>
           <Switch
-            value={soundEnabled}
-            onValueChange={setSoundEnabled}
+            value={profile.soundEnabled}
+            onValueChange={(val) => updateProfileAndPersist({ soundEnabled: val })}
             trackColor={{ false: theme.cardBorder, true: theme.tint }}
             thumbColor="#FFFFFF"
           />
@@ -121,8 +151,8 @@ export default function ProfileScreen() {
             </View>
           </View>
           <Switch
-            value={vibrationEnabled}
-            onValueChange={setVibrationEnabled}
+            value={profile.vibrationEnabled}
+            onValueChange={(val) => updateProfileAndPersist({ vibrationEnabled: val })}
             trackColor={{ false: theme.cardBorder, true: theme.tint }}
             thumbColor="#FFFFFF"
           />
@@ -134,18 +164,48 @@ export default function ProfileScreen() {
           <View style={styles.settingInfo}>
             <Ionicons name="speedometer-outline" size={20} color={theme.tint} style={{ marginRight: 12 }} />
             <View style={{ backgroundColor: 'transparent' }}>
-              <Text style={[styles.settingLabel, { color: theme.text }]}>Unidad de Peso ({useKg ? 'KG' : 'LBS'})</Text>
+              <Text style={[styles.settingLabel, { color: theme.text }]}>Unidad de Peso ({profile.useKg ? 'KG' : 'LBS'})</Text>
               <Text style={[styles.settingSub, { color: theme.subtext }]}>Kilogramos o Libras</Text>
             </View>
           </View>
           <Switch
-            value={useKg}
-            onValueChange={setUseKg}
+            value={profile.useKg}
+            onValueChange={(val) => updateProfileAndPersist({ useKg: val })}
             trackColor={{ false: theme.cardBorder, true: theme.tint }}
             thumbColor="#FFFFFF"
           />
         </View>
       </View>
+
+      {/* Tarjeta de Estado Cloud Firestore */}
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Base de Datos Cloud</Text>
+      <TouchableOpacity
+        style={[styles.card, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
+        activeOpacity={0.8}
+        onPress={showFirebaseHelp}
+      >
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Ionicons
+              name={isCloud ? 'cloud-done' : 'cloud-offline-outline'}
+              size={24}
+              color={isCloud ? theme.tint : theme.accent}
+              style={{ marginRight: 12 }}
+            />
+            <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+              <Text style={[styles.settingLabel, { color: theme.text }]}>
+                {isCloud ? 'Firestore Sincronizado' : 'Modo Offline / Local'}
+              </Text>
+              <Text style={[styles.settingSub, { color: theme.subtext }]}>
+                {isCloud
+                  ? 'Tus datos se respaldan en la nube en tiempo real'
+                  : 'Toca aquí para ver cómo vincular tus credenciales de Firestore'}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+        </View>
+      </TouchableOpacity>
 
       {/* Frase motivacional */}
       <View style={[styles.quoteCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
@@ -189,10 +249,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  userTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
+    marginBottom: 2,
+  },
   userName: {
     fontSize: 18,
     fontWeight: '800',
-    marginBottom: 2,
   },
   userHandle: {
     fontSize: 12,
