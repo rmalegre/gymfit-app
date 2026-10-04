@@ -37,7 +37,7 @@ export default function ModalScreen() {
         <View style={styles.tipTextWrap}>
           <Text style={[styles.tipTitle, { color: theme.text }]}>Descansos Óptimos</Text>
           <Text style={[styles.tipDesc, { color: theme.subtext }]}>
-            Utiliza la pestaña "Descanso" para cronometrar entre 60 y 180 segundos. No apresures tus series pesadas.
+            Utiliza la pestaña &quot;Descanso&quot; para cronometrar entre 60 y 180 segundos. No apresures tus series pesadas.
           </Text>
         </View>
       </View>

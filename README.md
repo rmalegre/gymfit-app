@@ -9,7 +9,7 @@ GymFit es un prototipo de aplicación móvil para acompañar los entrenamientos 
 - **Rutinas:** consulta rutinas de ejemplo, marca ejercicios como completados, ajusta el peso, agrega ejercicios y busca videos cortos de técnica en YouTube para cada ejercicio. Los videos se abren fuera de la app; los resultados dependen de YouTube.
 - **Temporizador:** inicia, pausa y reinicia descansos; elige tiempos predefinidos o ajústalos en intervalos de 15 segundos. En dispositivos nativos, vibra al finalizar.
 - **Progreso:** muestra métricas y récords de ejemplo; permite actualizar pesos y registrar el peso corporal durante la sesión.
-- **Perfil:** permite seleccionar un objetivo y modificar preferencias de sonido, vibración y unidades. Las preferencias se guardan localmente; sonido y vibración aún no controlan el temporizador.
+- **Perfil:** permite seleccionar un objetivo y modificar preferencias de sonido, vibración y unidades. Estos controles son demostrativos y no se guardan ni afectan todavía el resto de la aplicación.
 - **Tema:** adapta la interfaz a los modos claro y oscuro del dispositivo.
 
 ## Tecnologías
@@ -19,8 +19,6 @@ GymFit es un prototipo de aplicación móvil para acompañar los entrenamientos 
 - React 19
 - TypeScript
 - Expo Router
-- AsyncStorage
-- Firebase Firestore (sincronización opcional)
 
 ## Requisitos
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Text, View } from './Themed';
+import { Text } from './Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from './useColorScheme';
 import { isCloudSyncActive } from '@/services/gymStorage';

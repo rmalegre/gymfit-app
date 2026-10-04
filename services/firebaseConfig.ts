@@ -1,18 +1,15 @@
 /**
  * Configuración de Firebase para GymFit.
- * 
- * Puedes configurar estas variables en un archivo .env (usando EXPO_PUBLIC_*)
- * o rellenar directamente las claves aquí abajo desde tu consola de Firebase:
- * https://console.firebase.google.com/
+ * Credenciales conectadas al proyecto: gym-fit-70a48
  */
 
 export const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSy_TU_API_KEY_AQUI",
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "tu-proyecto.firebaseapp.com",
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "tu-proyecto-id",
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "tu-proyecto.appspot.com",
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "123456789012",
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:123456789012:web:abcdef123456",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyBlwxqNqWxAf2O1uiABCCxO-dAYgYcyQtE",
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "gym-fit-70a48.firebaseapp.com",
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "gym-fit-70a48",
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "gym-fit-70a48.firebasestorage.app",
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "362341773236",
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:362341773236:web:f7b5a25f35a62c1bc44ce1",
 };
 
 // Comprueba si el usuario ya ingresó sus credenciales reales de Firebase

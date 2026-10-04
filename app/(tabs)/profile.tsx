@@ -211,7 +211,7 @@ export default function ProfileScreen() {
       <View style={[styles.quoteCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
         <Ionicons name="flame" size={24} color={theme.accent} />
         <Text style={[styles.quoteText, { color: theme.text }]}>
-          "La disciplina es el puente entre tus metas y tus logros. ¡Sigue constante cada día!"
+          &quot;La disciplina es el puente entre tus metas y tus logros. ¡Sigue constante cada día!&quot;
         </Text>
       </View>
     </ScrollView>
