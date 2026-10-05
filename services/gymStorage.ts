@@ -46,6 +46,12 @@ export interface UserProfile {
   useKg: boolean;
 }
 
+export interface WatchedVideo {
+  videoId: string;
+  exerciseName: string;
+  watchedAt: string;
+}
+
 // Datos iniciales predeterminados
 export const DEFAULT_ROUTINES: Routine[] = [
   {
@@ -132,10 +138,40 @@ const STORAGE_KEYS = {
   PRS: '@gymfit_prs',
   WEIGHT: '@gymfit_weight',
   PROFILE: '@gymfit_profile',
+  VIDEOS: '@gymfit_recent_videos',
 };
 
 const FIRESTORE_COLLECTION = 'gymfit_data';
 const USER_DOC_ID = 'default_athlete';
+const MAX_RECENT_VIDEOS = 10;
+
+export const getRecentVideos = async (): Promise<WatchedVideo[]> => {
+  const storedVideos = await AsyncStorage.getItem(STORAGE_KEYS.VIDEOS);
+  if (!storedVideos) return [];
+
+  const parsedVideos: unknown = JSON.parse(storedVideos);
+  if (!Array.isArray(parsedVideos)) {
+    throw new Error('El historial de videos guardado no tiene un formato válido.');
+  }
+
+  return parsedVideos.filter(
+    (video): video is WatchedVideo =>
+      typeof video?.videoId === 'string' &&
+      typeof video?.exerciseName === 'string' &&
+      typeof video?.watchedAt === 'string'
+  ).slice(0, MAX_RECENT_VIDEOS);
+};
+
+export const saveRecentVideo = async (video: WatchedVideo): Promise<WatchedVideo[]> => {
+  const recentVideos = await getRecentVideos();
+  const updatedVideos = [
+    video,
+    ...recentVideos.filter((recentVideo) => recentVideo.videoId !== video.videoId),
+  ].slice(0, MAX_RECENT_VIDEOS);
+
+  await AsyncStorage.setItem(STORAGE_KEYS.VIDEOS, JSON.stringify(updatedVideos));
+  return updatedVideos;
+};
 
 export const isCloudSyncActive = (): boolean => {
   return isFirebaseConfigured() && db !== null;

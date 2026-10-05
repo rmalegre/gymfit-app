@@ -7,9 +7,12 @@ import {
   Modal,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
+import { WebView } from 'react-native-webview';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -17,8 +20,11 @@ import {
   Routine,
   Exercise,
   DEFAULT_ROUTINES,
+  getRecentVideos,
+  saveRecentVideo,
   subscribeRoutines,
   saveRoutines,
+  WatchedVideo,
 } from '@/services/gymStorage';
 import { SyncBadge } from '@/components/SyncBadge';
 
@@ -27,6 +33,9 @@ export default function WorkoutsScreen() {
   const theme = Colors[colorScheme];
   const [routines, setRoutines] = useState<Routine[]>(DEFAULT_ROUTINES);
   const [selectedRoutineId, setSelectedRoutineId] = useState<string>('chest_triceps');
+  const [videoExerciseName, setVideoExerciseName] = useState<string | null>(null);
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [recentVideos, setRecentVideos] = useState<WatchedVideo[]>([]);
 
   // Modal para añadir ejercicio
   const [modalVisible, setModalVisible] = useState(false);
@@ -43,6 +52,19 @@ export default function WorkoutsScreen() {
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    getRecentVideos()
+      .then((videos) => {
+        if (isMounted) setRecentVideos(videos);
+      })
+      .catch((error) => console.warn('[Videos] No se pudo cargar el historial:', error));
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const updateRoutinesAndPersist = (updater: (prev: Routine[]) => Routine[]) => {
@@ -92,12 +114,40 @@ export default function WorkoutsScreen() {
     const query = `${exerciseName} técnica correcta tutorial corto shorts`;
     const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 
+    if (Platform.OS !== 'web') {
+      setVideoId(null);
+      setVideoExerciseName(exerciseName);
+      return;
+    }
+
     try {
       await Linking.openURL(url);
     } catch (error) {
       console.warn('[Videos] No se pudo abrir YouTube:', error);
       Alert.alert('No se pudo abrir YouTube', 'Comprueba tu conexión e inténtalo de nuevo.');
     }
+  };
+
+  const openRecentVideo = (video: WatchedVideo) => {
+    setVideoId(video.videoId);
+    setVideoExerciseName(video.exerciseName);
+  };
+
+  const trackWatchedVideo = (url: string) => {
+    if (!videoExerciseName) return;
+
+    const matchedId = url.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1]
+      ?? url.match(/\/(?:shorts|embed)\/([A-Za-z0-9_-]{11})/)?.[1];
+    if (!matchedId || recentVideos[0]?.videoId === matchedId) return;
+
+    const watchedVideo: WatchedVideo = {
+      videoId: matchedId,
+      exerciseName: videoExerciseName,
+      watchedAt: new Date().toISOString(),
+    };
+    saveRecentVideo(watchedVideo)
+      .then(setRecentVideos)
+      .catch((error) => console.warn('[Videos] No se pudo guardar el historial:', error));
   };
 
   const resetProgress = () => {
@@ -261,6 +311,51 @@ export default function WorkoutsScreen() {
         </View>
       )}
 
+      <View style={styles.recentVideosSection}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Últimos videos vistos</Text>
+          {recentVideos.length > 0 && (
+            <Ionicons name="time-outline" size={18} color={theme.subtext} />
+          )}
+        </View>
+        {recentVideos.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.recentVideosList}
+          >
+            {recentVideos.map((video) => (
+              <TouchableOpacity
+                key={video.videoId}
+                style={[styles.recentVideoCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
+                onPress={() => openRecentVideo(video)}
+                accessibilityRole="button"
+                accessibilityLabel={`Volver a ver técnica de ${video.exerciseName}`}
+                activeOpacity={0.8}
+              >
+                <View style={styles.recentVideoThumbnail}>
+                  <Image
+                    source={{ uri: `https://img.youtube.com/vi/${video.videoId}/hqdefault.jpg` }}
+                    style={styles.recentVideoImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.recentVideoPlay}>
+                    <Ionicons name="play" size={20} color="#FFFFFF" />
+                  </View>
+                </View>
+                <Text style={[styles.recentVideoTitle, { color: theme.text }]} numberOfLines={2}>
+                  {video.exerciseName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={[styles.recentVideosEmpty, { color: theme.subtext }]}>
+            Los videos que reproduzcas aparecerán aquí.
+          </Text>
+        )}
+      </View>
+
       {/* Lista de Ejercicios */}
       <View style={styles.exercisesHeaderRow}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Ejercicios de la Rutina</Text>
@@ -351,10 +446,10 @@ export default function WorkoutsScreen() {
               style={[styles.exerciseVideoButton, { borderTopColor: theme.cardBorder }]}
               onPress={() => openExerciseVideo(exercise.name)}
               accessibilityRole="button"
-              accessibilityLabel={`Buscar video de técnica para ${exercise.name} en YouTube`}
+              accessibilityLabel={`Ver video de técnica para ${exercise.name}`}
             >
               <Ionicons name="play-circle-outline" size={20} color={theme.tint} />
-              <Text style={[styles.exerciseVideoText, { color: theme.tint }]}>Buscar video de técnica</Text>
+              <Text style={[styles.exerciseVideoText, { color: theme.tint }]}>Ver video de técnica</Text>
             </TouchableOpacity>
           </View>
         );
@@ -426,6 +521,54 @@ export default function WorkoutsScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={videoExerciseName !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setVideoExerciseName(null);
+          setVideoId(null);
+        }}
+      >
+        <SafeAreaView style={[styles.videoModal, { backgroundColor: theme.background }]}>
+          <View style={[styles.videoModalHeader, { backgroundColor: theme.card, borderBottomColor: theme.cardBorder }]}>
+            <Text style={[styles.videoModalTitle, { color: theme.text }]} numberOfLines={1}>
+              Técnica: {videoExerciseName}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setVideoExerciseName(null);
+                setVideoId(null);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar video"
+              hitSlop={10}
+            >
+              <Ionicons name="close" size={26} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+          {videoExerciseName !== null && (
+            <WebView
+              style={styles.videoWebView}
+              source={{
+                uri: videoId
+                  ? `https://www.youtube.com/watch?v=${videoId}`
+                  : `https://www.youtube.com/results?search_query=${encodeURIComponent(
+                      `${videoExerciseName} técnica correcta tutorial corto shorts`
+                    )}`,
+              }}
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              onNavigationStateChange={({ url }) => trackWatchedVideo(url)}
+              onError={({ nativeEvent }) => {
+                console.warn('[Videos] No se pudo cargar el video:', nativeEvent.description);
+                Alert.alert('No se pudo cargar el video', 'Comprueba tu conexión e inténtalo de nuevo.');
+              }}
+            />
+          )}
+        </SafeAreaView>
       </Modal>
     </ScrollView>
   );
@@ -638,6 +781,71 @@ const styles = StyleSheet.create({
   exerciseVideoText: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  recentVideosSection: {
+    marginBottom: 22,
+  },
+  recentVideosList: {
+    paddingRight: 4,
+  },
+  recentVideoCard: {
+    width: 248,
+    marginRight: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  recentVideoThumbnail: {
+    aspectRatio: 16 / 9,
+    backgroundColor: '#101827',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recentVideoImage: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  recentVideoPlay: {
+    width: 46,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: '#FF0033',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recentVideoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 54,
+  },
+  recentVideosEmpty: {
+    fontSize: 13,
+    paddingVertical: 8,
+  },
+  videoModal: {
+    flex: 1,
+  },
+  videoModalHeader: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+  },
+  videoModalTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    marginRight: 16,
+  },
+  videoWebView: {
+    flex: 1,
   },
   exerciseMetricBadge: {
     backgroundColor: 'transparent',
