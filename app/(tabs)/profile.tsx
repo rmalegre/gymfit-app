@@ -8,6 +8,8 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -19,32 +21,67 @@ import {
   isCloudSyncActive,
 } from '@/services/gymStorage';
 import { SyncBadge } from '@/components/SyncBadge';
+import { auth } from '@/services/firebase';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
-  const isCloud = isCloudSyncActive();
+  const [accountEmail, setAccountEmail] = useState(auth?.currentUser?.email ?? null);
+  const [isCloud, setIsCloud] = useState(isCloudSyncActive());
 
   useEffect(() => {
     const unsub = subscribeProfile((data) => {
       if (data) setProfile(data);
     });
-    return () => unsub();
+    const unsubAuth = auth
+      ? onAuthStateChanged(auth, (user) => {
+        setAccountEmail(user?.email ?? null);
+        setIsCloud(isCloudSyncActive());
+      })
+      : undefined;
+    return () => {
+      unsub();
+      unsubAuth?.();
+    };
   }, []);
 
   const updateProfileAndPersist = (patch: Partial<UserProfile>) => {
+    if (!auth?.currentUser) {
+      Alert.alert(
+        'Inicia sesión para personalizar',
+        'Puedes consultar el perfil de ejemplo sin una cuenta. Inicia sesión para guardar tus preferencias.',
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Iniciar sesión', onPress: () => router.push('/sign-in') },
+        ]
+      );
+      return;
+    }
     const updated = { ...profile, ...patch };
     setProfile(updated);
-    saveProfile(updated);
+    saveProfile(updated).catch((error) => {
+      console.error('[Perfil] No se pudieron guardar los cambios:', error);
+      Alert.alert('No se pudo guardar', 'Inténtalo de nuevo.');
+    });
   };
 
   const showFirebaseHelp = () => {
     Alert.alert(
       'Configuración de Firebase',
-      'Para conectar tu propia base de datos Cloud Firestore:\n\n1. Ve a console.firebase.google.com y crea un proyecto.\n2. Crea una base de datos Cloud Firestore en modo producción o prueba.\n3. Añade una Web App y copia tus credenciales.\n4. Pégalas en "services/firebaseConfig.ts" o en tu archivo .env con el prefijo EXPO_PUBLIC_.'
+      'Para habilitar la sincronización:\n\n1. Crea una base de datos Cloud Firestore.\n2. Activa Correo/Contraseña en Authentication > Proveedores.\n3. Configura las credenciales de Firebase en services/firebaseConfig.ts o en .env.\n4. Publica las reglas incluidas con: firebase deploy --only firestore:rules --project gym-fit-70a48.\n\nLa sincronización requiere iniciar sesión y aplicar estas reglas.'
     );
+  };
+
+  const handleSignOut = async () => {
+    if (!auth) return;
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('[Firebase Auth] No se pudo cerrar la sesión:', error);
+      Alert.alert('Error', 'No se pudo cerrar la sesión. Inténtalo de nuevo.');
+    }
   };
 
   return (
@@ -111,7 +148,7 @@ export default function ProfileScreen() {
               <Text
                 style={[
                   styles.goalText,
-                  { color: isSelected ? '#FFFFFF' : theme.text, fontWeight: isSelected ? '700' : '500' },
+                  { color: isSelected ? '#061006' : theme.text, fontWeight: isSelected ? '700' : '500' },
                 ]}
               >
                 {goal}
@@ -199,13 +236,46 @@ export default function ProfileScreen() {
               <Text style={[styles.settingSub, { color: theme.subtext }]}>
                 {isCloud
                   ? 'Tus datos se respaldan en la nube en tiempo real'
-                  : 'Toca aquí para ver cómo vincular tus credenciales de Firestore'}
+                  : 'Toca aquí para revisar la configuración de Auth y las reglas de Firestore'}
               </Text>
             </View>
           </View>
           <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
         </View>
       </TouchableOpacity>
+
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Cuenta</Text>
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+        {accountEmail ? (
+          <>
+            <Text style={[styles.settingSub, { color: theme.subtext, marginBottom: 12 }]}>
+              Sesión iniciada como {accountEmail}
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={handleSignOut}
+              style={[styles.signOutButton, { borderColor: theme.cardBorder }]}
+            >
+              <Ionicons name="log-out-outline" size={19} color={theme.accent} />
+              <Text style={[styles.settingLabel, { color: theme.accent }]}>Cerrar sesión</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.settingSub, { color: theme.subtext, marginBottom: 12 }]}>
+              La app y sus secciones están disponibles sin cuenta. Inicia sesión para personalizar y guardar tus rutinas.
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => router.push('/sign-in')}
+              style={[styles.signOutButton, { borderColor: theme.tint }]}
+            >
+              <Ionicons name="person-circle-outline" size={19} color={theme.tint} />
+              <Text style={[styles.settingLabel, { color: theme.tint }]}>Iniciar sesión o crear cuenta</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
 
       {/* Frase motivacional */}
       <View style={[styles.quoteCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
@@ -328,6 +398,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
     marginBottom: 24,
+  },
+  signOutButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   settingRow: {
     flexDirection: 'row',

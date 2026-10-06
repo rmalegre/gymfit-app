@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, getDoc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import { doc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { auth, db, getAuthenticatedUserId, getCurrentUserId, isFirebaseConfigured } from './firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 export interface Exercise {
   id: string;
@@ -142,11 +143,27 @@ const STORAGE_KEYS = {
 };
 
 const FIRESTORE_COLLECTION = 'gymfit_data';
-const USER_DOC_ID = 'default_athlete';
 const MAX_RECENT_VIDEOS = 10;
 
+const getUserStorageKey = (key: string): string => {
+  const userId = getCurrentUserId();
+  return userId ? `${key}:${userId}` : `${key}:guest`;
+};
+const getUserDocument = (documentId: string, userId: string) => {
+  if (!db) {
+    throw new Error('Firestore no está disponible.');
+  }
+  return doc(db, 'users', userId, FIRESTORE_COLLECTION, documentId);
+};
+
+const reportStorageError = (message: string, error: unknown): void => {
+  console.error(message, error);
+};
+
 export const getRecentVideos = async (): Promise<WatchedVideo[]> => {
-  const storedVideos = await AsyncStorage.getItem(STORAGE_KEYS.VIDEOS);
+  const userId = getCurrentUserId();
+  if (!userId) return [];
+  const storedVideos = await AsyncStorage.getItem(`${STORAGE_KEYS.VIDEOS}:${userId}`);
   if (!storedVideos) return [];
 
   const parsedVideos: unknown = JSON.parse(storedVideos);
@@ -163,194 +180,140 @@ export const getRecentVideos = async (): Promise<WatchedVideo[]> => {
 };
 
 export const saveRecentVideo = async (video: WatchedVideo): Promise<WatchedVideo[]> => {
+  if (!getCurrentUserId()) return [];
   const recentVideos = await getRecentVideos();
   const updatedVideos = [
     video,
     ...recentVideos.filter((recentVideo) => recentVideo.videoId !== video.videoId),
   ].slice(0, MAX_RECENT_VIDEOS);
 
-  await AsyncStorage.setItem(STORAGE_KEYS.VIDEOS, JSON.stringify(updatedVideos));
+  await AsyncStorage.setItem(getUserStorageKey(STORAGE_KEYS.VIDEOS), JSON.stringify(updatedVideos));
   return updatedVideos;
 };
 
 export const isCloudSyncActive = (): boolean => {
-  return isFirebaseConfigured() && db !== null;
+  return isFirebaseConfigured() && db !== null && Boolean(authenticatedUserId());
+};
+
+const authenticatedUserId = (): string | null => getCurrentUserId();
+
+const subscribeUserData = <T,>(
+  documentId: string,
+  storageKey: string,
+  fallback: T,
+  callback: (value: T) => void,
+  onError?: (error: unknown) => void
+): (() => void) => {
+  let active = true;
+  let unsubscribeRemote: Unsubscribe | null = null;
+  const handleError = (error: unknown) => {
+    if (onError) onError(error);
+    else reportStorageError(`[GymFit] Error cargando ${documentId}:`, error);
+  };
+
+  const loadUserData = (user: User | null) => {
+    unsubscribeRemote?.();
+    unsubscribeRemote = null;
+    if (!active) return;
+    if (!user) {
+      callback(fallback);
+      return;
+    }
+
+    const localKey = `${storageKey}:${user.uid}`;
+    AsyncStorage.getItem(localKey)
+      .then((local) => {
+        if (!active || auth?.currentUser?.uid !== user.uid) return;
+        if (!local) {
+          callback(fallback);
+          return;
+        }
+        try {
+          callback(JSON.parse(local) as T);
+        } catch (error) {
+          handleError(error);
+        }
+      })
+      .catch(handleError);
+
+    if (!isCloudSyncActive() || !db) return;
+    unsubscribeRemote = onSnapshot(
+      getUserDocument(documentId, user.uid),
+      (docSnap) => {
+        if (!active || auth?.currentUser?.uid !== user.uid || !docSnap.exists()) return;
+        const data = docSnap.data();
+        const remoteValue = documentId === 'profile' ? data as T : data.items as T;
+        if (remoteValue === undefined) return;
+        AsyncStorage.setItem(localKey, JSON.stringify(remoteValue))
+          .then(() => {
+            if (active && auth?.currentUser?.uid === user.uid) callback(remoteValue);
+          })
+          .catch(handleError);
+      },
+      handleError
+    );
+  };
+
+  if (!auth) {
+    callback(fallback);
+    return () => {
+      active = false;
+    };
+  }
+
+  const unsubscribeAuth = onAuthStateChanged(auth, loadUserData, handleError);
+  return () => {
+    active = false;
+    unsubscribeRemote?.();
+    unsubscribeAuth();
+  };
+};
+
+const saveUserData = async <T,>(
+  documentId: string,
+  storageKey: string,
+  value: T,
+  profileDocument = false
+): Promise<void> => {
+  const userId = getAuthenticatedUserId();
+  const localKey = `${storageKey}:${userId}`;
+  await AsyncStorage.setItem(localKey, JSON.stringify(value));
+
+  if (!isCloudSyncActive() || !db) return;
+  const data = profileDocument
+    ? { ...(value as UserProfile), updatedAt: new Date().toISOString() }
+    : { items: value, updatedAt: new Date().toISOString() };
+  try {
+    await setDoc(getUserDocument(documentId, userId), data, { merge: true });
+  } catch (error) {
+    reportStorageError(`[Firestore] Error guardando ${documentId}:`, error);
+  }
 };
 
 // ================= Rutinas =================
-export const subscribeRoutines = (callback: (routines: Routine[]) => void): (() => void) => {
-  // 1. Cargar cache local inmediatamente
-  AsyncStorage.getItem(STORAGE_KEYS.ROUTINES).then((local) => {
-    if (local) {
-      try {
-        callback(JSON.parse(local));
-      } catch {}
-    } else {
-      callback(DEFAULT_ROUTINES);
-    }
-  });
+export const subscribeRoutines = (callback: (routines: Routine[]) => void): (() => void) =>
+  subscribeUserData('routines', STORAGE_KEYS.ROUTINES, DEFAULT_ROUTINES, callback);
 
-  // 2. Si Firestore está activo, escuchar cambios en tiempo real
-  if (isCloudSyncActive() && db) {
-    const routineDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_routines`);
-    const unsubscribe: Unsubscribe = onSnapshot(
-      routineDocRef,
-      (docSnap) => {
-        if (docSnap.exists() && docSnap.data()?.items) {
-          const remoteRoutines = docSnap.data().items as Routine[];
-          AsyncStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(remoteRoutines));
-          callback(remoteRoutines);
-        }
-      },
-      (err) => console.warn('[Firestore] Error en snapshot de rutinas:', err)
-    );
-    return unsubscribe;
-  }
-
-  return () => {};
-};
-
-export const saveRoutines = async (routines: Routine[]): Promise<void> => {
-  await AsyncStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(routines));
-
-  if (isCloudSyncActive() && db) {
-    try {
-      const routineDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_routines`);
-      await setDoc(routineDocRef, { items: routines, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (err) {
-      console.warn('[Firestore] Error guardando rutinas:', err);
-    }
-  }
-};
+export const saveRoutines = (routines: Routine[]): Promise<void> =>
+  saveUserData('routines', STORAGE_KEYS.ROUTINES, routines);
 
 // ================= Récords Personales (PRs) =================
-export const subscribePRs = (callback: (prs: PersonalRecord[]) => void): (() => void) => {
-  AsyncStorage.getItem(STORAGE_KEYS.PRS).then((local) => {
-    if (local) {
-      try {
-        callback(JSON.parse(local));
-      } catch {}
-    } else {
-      callback(DEFAULT_PRS);
-    }
-  });
+export const subscribePRs = (callback: (prs: PersonalRecord[]) => void): (() => void) =>
+  subscribeUserData('prs', STORAGE_KEYS.PRS, DEFAULT_PRS, callback);
 
-  if (isCloudSyncActive() && db) {
-    const prDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_prs`);
-    const unsubscribe: Unsubscribe = onSnapshot(
-      prDocRef,
-      (docSnap) => {
-        if (docSnap.exists() && docSnap.data()?.items) {
-          const remotePRs = docSnap.data().items as PersonalRecord[];
-          AsyncStorage.setItem(STORAGE_KEYS.PRS, JSON.stringify(remotePRs));
-          callback(remotePRs);
-        }
-      },
-      (err) => console.warn('[Firestore] Error en snapshot de PRs:', err)
-    );
-    return unsubscribe;
-  }
-
-  return () => {};
-};
-
-export const savePRs = async (prs: PersonalRecord[]): Promise<void> => {
-  await AsyncStorage.setItem(STORAGE_KEYS.PRS, JSON.stringify(prs));
-
-  if (isCloudSyncActive() && db) {
-    try {
-      const prDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_prs`);
-      await setDoc(prDocRef, { items: prs, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (err) {
-      console.warn('[Firestore] Error guardando PRs:', err);
-    }
-  }
-};
+export const savePRs = (prs: PersonalRecord[]): Promise<void> =>
+  saveUserData('prs', STORAGE_KEYS.PRS, prs);
 
 // ================= Registro de Peso =================
-export const subscribeWeightLog = (callback: (log: WeightEntry[]) => void): (() => void) => {
-  AsyncStorage.getItem(STORAGE_KEYS.WEIGHT).then((local) => {
-    if (local) {
-      try {
-        callback(JSON.parse(local));
-      } catch {}
-    } else {
-      callback(DEFAULT_WEIGHT_LOG);
-    }
-  });
+export const subscribeWeightLog = (callback: (log: WeightEntry[]) => void): (() => void) =>
+  subscribeUserData('weight', STORAGE_KEYS.WEIGHT, DEFAULT_WEIGHT_LOG, callback);
 
-  if (isCloudSyncActive() && db) {
-    const weightDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_weight`);
-    const unsubscribe: Unsubscribe = onSnapshot(
-      weightDocRef,
-      (docSnap) => {
-        if (docSnap.exists() && docSnap.data()?.items) {
-          const remoteWeight = docSnap.data().items as WeightEntry[];
-          AsyncStorage.setItem(STORAGE_KEYS.WEIGHT, JSON.stringify(remoteWeight));
-          callback(remoteWeight);
-        }
-      },
-      (err) => console.warn('[Firestore] Error en snapshot de peso:', err)
-    );
-    return unsubscribe;
-  }
-
-  return () => {};
-};
-
-export const saveWeightLog = async (log: WeightEntry[]): Promise<void> => {
-  await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT, JSON.stringify(log));
-
-  if (isCloudSyncActive() && db) {
-    try {
-      const weightDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_weight`);
-      await setDoc(weightDocRef, { items: log, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (err) {
-      console.warn('[Firestore] Error guardando peso:', err);
-    }
-  }
-};
+export const saveWeightLog = (log: WeightEntry[]): Promise<void> =>
+  saveUserData('weight', STORAGE_KEYS.WEIGHT, log);
 
 // ================= Perfil y Ajustes =================
-export const subscribeProfile = (callback: (profile: UserProfile) => void): (() => void) => {
-  AsyncStorage.getItem(STORAGE_KEYS.PROFILE).then((local) => {
-    if (local) {
-      try {
-        callback(JSON.parse(local));
-      } catch {}
-    } else {
-      callback(DEFAULT_PROFILE);
-    }
-  });
+export const subscribeProfile = (callback: (profile: UserProfile) => void): (() => void) =>
+  subscribeUserData('profile', STORAGE_KEYS.PROFILE, DEFAULT_PROFILE, callback);
 
-  if (isCloudSyncActive() && db) {
-    const profileDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_profile`);
-    const unsubscribe: Unsubscribe = onSnapshot(
-      profileDocRef,
-      (docSnap) => {
-        if (docSnap.exists() && docSnap.data()) {
-          const remoteProfile = docSnap.data() as UserProfile;
-          AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(remoteProfile));
-          callback(remoteProfile);
-        }
-      },
-      (err) => console.warn('[Firestore] Error en snapshot de perfil:', err)
-    );
-    return unsubscribe;
-  }
-
-  return () => {};
-};
-
-export const saveProfile = async (profile: UserProfile): Promise<void> => {
-  await AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
-
-  if (isCloudSyncActive() && db) {
-    try {
-      const profileDocRef = doc(db, FIRESTORE_COLLECTION, `${USER_DOC_ID}_profile`);
-      await setDoc(profileDocRef, { ...profile, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (err) {
-      console.warn('[Firestore] Error guardando perfil:', err);
-    }
-  }
-};
+export const saveProfile = (profile: UserProfile): Promise<void> =>
+  saveUserData('profile', STORAGE_KEYS.PROFILE, profile, true);

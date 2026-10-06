@@ -10,6 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
+import { DEFAULT_PROFILE, UserProfile, subscribeProfile } from '@/services/gymStorage';
 
 const PRESETS = [30, 45, 60, 90, 120, 180];
 
@@ -21,19 +23,24 @@ export default function TimerScreen() {
   const [timeLeft, setTimeLeft] = useState(60);
   const [isActive, setIsActive] = useState(false);
   const [finishedAlert, setFinishedAlert] = useState(false);
+  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completionHandledRef = useRef(false);
+  const alertPlayer = useAudioPlayer(require('../../assets/audio/timer-done.wav'));
+
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' })
+      .catch((error) => console.warn('[Audio] No se pudo configurar el sonido:', error));
+    const unsubscribe = subscribeProfile(setProfile);
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (isActive) {
       intervalRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
-            clearInterval(intervalRef.current!);
-            setIsActive(false);
-            setFinishedAlert(true);
-            if (Platform.OS !== 'web') {
-              Vibration.vibrate([0, 500, 200, 500]);
-            }
+            if (intervalRef.current) clearInterval(intervalRef.current);
             return 0;
           }
           return prev - 1;
@@ -48,7 +55,23 @@ export default function TimerScreen() {
     };
   }, [isActive]);
 
+  useEffect(() => {
+    if (timeLeft !== 0 || !isActive || completionHandledRef.current) return;
+
+    completionHandledRef.current = true;
+    setIsActive(false);
+    setFinishedAlert(true);
+    if (profile.soundEnabled) {
+      alertPlayer.seekTo(0);
+      alertPlayer.play();
+    }
+    if (profile.vibrationEnabled && Platform.OS !== 'web') {
+      Vibration.vibrate([0, 500, 200, 500]);
+    }
+  }, [timeLeft, isActive, profile.soundEnabled, profile.vibrationEnabled, alertPlayer]);
+
   const selectPreset = (seconds: number) => {
+    completionHandledRef.current = false;
     setIsActive(false);
     setFinishedAlert(false);
     setTotalSeconds(seconds);
@@ -57,16 +80,19 @@ export default function TimerScreen() {
 
   const toggleStartPause = () => {
     if (timeLeft === 0) {
+      completionHandledRef.current = false;
       setTimeLeft(totalSeconds);
       setFinishedAlert(false);
       setIsActive(true);
       return;
     }
+    if (!isActive) completionHandledRef.current = false;
     setFinishedAlert(false);
     setIsActive(!isActive);
   };
 
   const resetTimer = () => {
+    completionHandledRef.current = false;
     setIsActive(false);
     setFinishedAlert(false);
     setTimeLeft(totalSeconds);
@@ -158,10 +184,10 @@ export default function TimerScreen() {
             <Ionicons
               name={isActive ? 'pause' : 'play'}
               size={28}
-              color="#FFFFFF"
+              color={isActive ? '#FFFFFF' : '#061006'}
               style={{ marginLeft: isActive ? 0 : 4 }}
             />
-            <Text style={styles.primaryButtonText}>{isActive ? 'Pausar' : 'Iniciar'}</Text>
+            <Text style={[styles.primaryButtonText, { color: isActive ? '#FFFFFF' : '#061006' }]}>{isActive ? 'Pausar' : 'Iniciar'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -186,7 +212,7 @@ export default function TimerScreen() {
               <Text
                 style={[
                   styles.presetSec,
-                  { color: isSelected ? '#FFFFFF' : theme.text },
+                  { color: isSelected ? '#061006' : theme.text },
                 ]}
               >
                 {seconds >= 60 ? `${seconds / 60}m` : `${seconds}s`}
@@ -194,7 +220,7 @@ export default function TimerScreen() {
               <Text
                 style={[
                   styles.presetDesc,
-                  { color: isSelected ? '#F0FDF4' : theme.subtext },
+                  { color: isSelected ? '#123015' : theme.subtext },
                 ]}
               >
                 {seconds <= 45 ? 'Hipertrofia corta' : seconds <= 90 ? 'Estándar' : 'Fuerza pesada'}
@@ -255,10 +281,15 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    borderWidth: 4,
+    borderWidth: 3,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
+    backgroundColor: '#080E0A',
+    shadowColor: '#39FF14',
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
   },
   digitalTime: {
     fontSize: 48,
@@ -322,7 +353,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryButtonText: {
-    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '800',
   },

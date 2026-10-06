@@ -17,16 +17,19 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: theme.card,
           borderTopColor: theme.cardBorder,
+          borderTopWidth: 1,
+          elevation: 0,
           height: 60 + insets.bottom,
           paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '700',
         },
         headerStyle: {
           backgroundColor: theme.card,
+          elevation: 0,
         },
         headerTitleStyle: {
           fontWeight: '800',
@@ -39,7 +42,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Rutinas',
-          headerTitle: '🏋️ Rutinas de Gimnasio',
+          headerTitle: 'GYMFIT  /  RUTINAS',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'barbell' : 'barbell-outline'} size={24} color={color} />
           ),
@@ -49,9 +52,29 @@ export default function TabLayout() {
         name="timer"
         options={{
           title: 'Descanso',
-          headerTitle: '⏱️ Temporizador de Descanso',
+          headerTitle: 'GYMFIT  /  DESCANSO',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'timer' : 'timer-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="weekly"
+        options={{
+          title: 'Semana',
+          headerTitle: 'GYMFIT  /  MI SEMANA',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={23} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="music"
+        options={{
+          title: 'Música',
+          headerTitle: 'GYMFIT  /  MÚSICA',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'musical-notes' : 'musical-notes-outline'} size={23} color={color} />
           ),
         }}
       />
@@ -59,7 +82,7 @@ export default function TabLayout() {
         name="progress"
         options={{
           title: 'Progreso',
-          headerTitle: '📈 Progreso y Récords',
+          headerTitle: 'GYMFIT  /  PROGRESO',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'trending-up' : 'trending-up-outline'} size={24} color={color} />
           ),
@@ -69,7 +92,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Perfil',
-          headerTitle: '👤 Perfil de Atleta',
+          headerTitle: 'GYMFIT  /  PERFIL',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
           ),

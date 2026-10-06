@@ -1,0 +1,84 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Comprueba que el usuario esté autenticado y sea el propietario del documento
+    function signedInOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Valida documentos que contienen listas de elementos (rutinas, récords personales, peso)
+    function validItemsDocument() {
+      return request.resource.data.keys().hasAll(['items', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['items', 'updatedAt'])
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 500
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() <= 40;
+    }
+
+    // Valida el documento de perfil y preferencias del usuario
+    function validProfileDocument() {
+      let profile = request.resource.data;
+      return profile.keys().hasAll([
+          'name', 'level', 'goal', 'sessions', 'volumeTon', 'streakDays',
+          'soundEnabled', 'vibrationEnabled', 'useKg', 'updatedAt'
+        ])
+        && profile.keys().hasOnly([
+          'name', 'level', 'goal', 'sessions', 'volumeTon', 'streakDays',
+          'soundEnabled', 'vibrationEnabled', 'useKg', 'updatedAt'
+        ])
+        && profile.name is string
+        && profile.name.size() > 0
+        && profile.name.size() <= 80
+        && profile.level is string
+        && profile.level.size() > 0
+        && profile.level.size() <= 40
+        && profile.goal in ['Hipertrofia', 'Fuerza', 'Definición', 'Acondicionamiento']
+        && profile.sessions is number
+        && profile.sessions >= 0
+        && profile.volumeTon is number
+        && profile.volumeTon >= 0
+        && profile.streakDays is number
+        && profile.streakDays >= 0
+        && profile.soundEnabled is bool
+        && profile.vibrationEnabled is bool
+        && profile.useKg is bool
+        && profile.updatedAt is string
+        && profile.updatedAt.size() <= 40;
+    }
+
+    // Valida el documento del plan semanal (para soporte en nube sincronizado por cuenta)
+    function validWeeklyPlanDocument() {
+      let plan = request.resource.data;
+      return plan.keys().hasAll(['level', 'goal', 'equipment', 'days', 'updatedAt'])
+        && plan.keys().hasOnly(['level', 'goal', 'equipment', 'days', 'createdAt', 'updatedAt'])
+        && plan.level in ['Principiante', 'Intermedio', 'Avanzado']
+        && plan.goal in ['Hipertrofia', 'Fuerza', 'Definición', 'Acondicionamiento']
+        && plan.equipment in ['Gimnasio', 'Casa']
+        && plan.days is list
+        && plan.days.size() <= 7
+        && (!('createdAt' in plan) || (plan.createdAt is string && plan.createdAt.size() <= 40))
+        && plan.updatedAt is string
+        && plan.updatedAt.size() <= 40;
+    }
+
+    // Acceso restringido por UID a la colección de datos personales de la app.
+    // Los datos solo se leen o modifican cuando el usuario inicia sesión en su cuenta.
+    match /users/{userId}/gymfit_data/{documentId} {
+      allow read, delete: if signedInOwner(userId)
+        && documentId in ['routines', 'prs', 'weight', 'profile', 'weekly_plan'];
+      allow create, update: if signedInOwner(userId)
+        && (
+          (documentId in ['routines', 'prs', 'weight'] && validItemsDocument())
+          || (documentId == 'profile' && validProfileDocument())
+          || (documentId == 'weekly_plan' && (validWeeklyPlanDocument() || validItemsDocument()))
+        );
+    }
+
+    // Denegación explícita para cualquier otra ruta o colección en la base de datos
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

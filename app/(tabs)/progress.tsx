@@ -8,6 +8,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
@@ -23,6 +24,7 @@ import {
   saveWeightLog,
 } from '@/services/gymStorage';
 import { SyncBadge } from '@/components/SyncBadge';
+import { auth } from '@/services/firebase';
 
 const WEEK_DAYS = [
   { day: 'Lun', done: true },
@@ -68,7 +70,21 @@ export default function ProgressScreen() {
   const initialWeight = 82.0;
   const targetWeight = 75.0;
 
+  const requireAccount = (): boolean => {
+    if (auth?.currentUser) return true;
+    Alert.alert(
+      'Inicia sesión para guardar',
+      'Puedes consultar el progreso de ejemplo sin una cuenta. Inicia sesión para guardar tus propios datos.',
+      [
+        { text: 'Ahora no', style: 'cancel' },
+        { text: 'Iniciar sesión', onPress: () => router.push('/sign-in') },
+      ]
+    );
+    return false;
+  };
+
   const handleUpdatePr = () => {
+    if (!requireAccount()) return;
     const val = parseFloat(newPrWeight);
     if (isNaN(val) || val <= 0) {
       Alert.alert('Error', 'Ingresa un peso válido');
@@ -82,12 +98,16 @@ export default function ProgressScreen() {
     );
 
     setPrs(updated);
-    savePRs(updated);
+    savePRs(updated).catch((error) => {
+      console.error('[Progreso] No se pudo guardar el récord:', error);
+      Alert.alert('No se pudo guardar', 'Inténtalo de nuevo.');
+    });
     setPrModalVisible(false);
     setNewPrWeight('');
   };
 
   const handleAddWeight = () => {
+    if (!requireAccount()) return;
     const val = parseFloat(inputWeight);
     if (isNaN(val) || val <= 30 || val >= 300) {
       Alert.alert('Error', 'Ingresa un peso corporal razonable');
@@ -102,7 +122,10 @@ export default function ProgressScreen() {
 
     const updated = [newEntry, ...weightLog];
     setWeightLog(updated);
-    saveWeightLog(updated);
+    saveWeightLog(updated).catch((error) => {
+      console.error('[Progreso] No se pudo guardar el peso:', error);
+      Alert.alert('No se pudo guardar', 'Inténtalo de nuevo.');
+    });
     setWeightModalVisible(false);
   };
 
@@ -146,7 +169,7 @@ export default function ProgressScreen() {
                 ]}
               >
                 {item.done ? (
-                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                  <Ionicons name="checkmark" size={16} color="#061006" />
                 ) : (
                   <Text style={[styles.pendingDot, { color: theme.subtext }]}>•</Text>
                 )}
@@ -209,7 +232,7 @@ export default function ProgressScreen() {
           style={[styles.addWeightBtn, { backgroundColor: theme.tint }]}
           onPress={() => setWeightModalVisible(true)}
         >
-          <Ionicons name="add" size={16} color="#FFFFFF" />
+          <Ionicons name="add" size={16} color="#061006" />
           <Text style={styles.addWeightBtnText}>Registrar</Text>
         </TouchableOpacity>
       </View>
@@ -473,7 +496,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addWeightBtnText: {
-    color: '#FFFFFF',
+    color: '#061006',
     fontWeight: '700',
     fontSize: 12,
   },
@@ -578,7 +601,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmBtnText: {
-    color: '#FFFFFF',
+    color: '#061006',
     fontSize: 14,
     fontWeight: '700',
   },

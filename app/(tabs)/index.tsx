@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -8,10 +8,13 @@ import {
   Alert,
   Platform,
   Image,
+  ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { WebView } from 'react-native-webview';
+import { auth } from '@/services/firebase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
@@ -27,6 +30,7 @@ import {
   WatchedVideo,
 } from '@/services/gymStorage';
 import { SyncBadge } from '@/components/SyncBadge';
+import { WeeklyPlan, loadWeeklyPlan } from '@/services/weeklyPlan';
 
 export default function WorkoutsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -36,6 +40,7 @@ export default function WorkoutsScreen() {
   const [videoExerciseName, setVideoExerciseName] = useState<string | null>(null);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [recentVideos, setRecentVideos] = useState<WatchedVideo[]>([]);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan | null>(null);
 
   // Modal para añadir ejercicio
   const [modalVisible, setModalVisible] = useState(false);
@@ -54,23 +59,53 @@ export default function WorkoutsScreen() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
-    getRecentVideos()
-      .then((videos) => {
-        if (isMounted) setRecentVideos(videos);
-      })
-      .catch((error) => console.warn('[Videos] No se pudo cargar el historial:', error));
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      getRecentVideos()
+        .then((videos) => {
+          if (isMounted) setRecentVideos(videos);
+        })
+        .catch((error) => console.warn('[Videos] No se pudo cargar el historial:', error));
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      return () => {
+        isMounted = false;
+      };
+    }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      loadWeeklyPlan()
+        .then((plan) => {
+          if (isMounted) setWeeklyPlan(plan);
+        })
+        .catch((error) => console.warn('[Rutina semanal] No se pudo cargar:', error));
+      return () => {
+        isMounted = false;
+      };
+    }, [])
+  );
 
   const updateRoutinesAndPersist = (updater: (prev: Routine[]) => Routine[]) => {
+    if (!auth?.currentUser) {
+      Alert.alert(
+        'Inicia sesión para personalizar',
+        'Puedes ver las rutinas sin una cuenta. Para guardar cambios en tu rutina, inicia sesión o crea una cuenta.',
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Iniciar sesión', onPress: () => router.push('/sign-in') },
+        ]
+      );
+      return;
+    }
     setRoutines((prev) => {
       const next = updater(prev);
-      saveRoutines(next);
+      saveRoutines(next).catch((error) => {
+        console.error('[Rutinas] No se pudieron guardar los cambios:', error);
+        Alert.alert('No se pudo guardar', 'Inténtalo de nuevo.');
+      });
       return next;
     });
   };
@@ -215,11 +250,17 @@ export default function WorkoutsScreen() {
       showsVerticalScrollIndicator={false}
     >
       {/* Header Bienvenida */}
-      <View style={[styles.headerBanner, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+      <ImageBackground
+        source={require('../../assets/images/gym-banner-reference.jpg')}
+        resizeMode="cover"
+        imageStyle={styles.headerBannerImage}
+        style={[styles.headerBanner, { borderColor: theme.cardBorder }]}
+      >
+        <View pointerEvents="none" style={styles.headerBannerScrim} />
         <View style={styles.bannerRow}>
           <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-            <Text style={[styles.greeting, { color: theme.subtext }]}>¡VAMOS CON TODO HOY! 💪</Text>
-            <Text style={[styles.heroTitle, { color: theme.text }]}>Entrenamiento del Día</Text>
+            <Text style={[styles.greeting, { color: theme.tint }]}>MÁS FUERTE QUE AYER</Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>Entrena hoy</Text>
           </View>
           <View style={styles.badgeGroup}>
             <SyncBadge />
@@ -229,6 +270,16 @@ export default function WorkoutsScreen() {
             </View>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={[styles.startButton, { backgroundColor: theme.tint }]}
+          onPress={() => router.push('/(tabs)/weekly')}
+          accessibilityRole="button"
+          accessibilityLabel={weeklyPlan ? 'Ver mi rutina semanal' : 'Armar mi rutina semanal'}
+        >
+          <Text style={styles.startButtonText}>{weeklyPlan ? 'Ver mi rutina' : 'Armar mi semana'}</Text>
+          <Ionicons name="arrow-forward" size={17} color="#061006" />
+        </TouchableOpacity>
 
         {/* Barra de progreso de la rutina */}
         <View style={styles.progressSection}>
@@ -247,11 +298,58 @@ export default function WorkoutsScreen() {
             />
           </View>
         </View>
-      </View>
+      </ImageBackground>
+
+      {weeklyPlan && weeklyPlan.days.length > 0 && (
+        <View style={styles.myWeekSection}>
+          <View style={styles.weekSectionHeading}>
+            <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Mi semana</Text>
+              <Text style={[styles.weekSectionSubtitle, { color: theme.subtext }]}>
+                {weeklyPlan.level} · {weeklyPlan.goal} · {weeklyPlan.days.length} días
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/weekly')}
+              style={[styles.editWeekButton, { borderColor: theme.cardBorder }]}
+              accessibilityRole="button"
+              accessibilityLabel="Ver y editar mi rutina semanal"
+            >
+              <Text style={[styles.editWeekText, { color: theme.tint }]}>Ver semana</Text>
+              <Ionicons name="chevron-forward" size={15} color={theme.tint} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekCardsRow}>
+            {weeklyPlan.days.map((day) => {
+              const dayCompleted = day.exercises.filter((exercise) => exercise.completed).length;
+              return (
+                <TouchableOpacity
+                  key={`${day.day}-${day.focus}`}
+                  style={[styles.weekPlanCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
+                  onPress={() => router.push('/(tabs)/weekly')}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.weekPlanCardTop}>
+                    <View style={[styles.weekDayBadge, { backgroundColor: `${theme.tint}20` }]}>
+                      <Text style={[styles.weekDayBadgeText, { color: theme.tint }]}>{day.day}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={17} color={theme.subtext} />
+                  </View>
+                  <Text style={[styles.weekPlanFocus, { color: theme.text }]} numberOfLines={1}>{day.focus}</Text>
+                  <Text style={[styles.weekPlanMeta, { color: theme.subtext }]}>
+                    {day.exercises.length} ejercicios · {dayCompleted}/{day.exercises.length} listos
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Selector de Rutinas */}
       <View style={styles.sectionHeaderRow}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Selecciona tu Rutina</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Otras rutinas</Text>
         <TouchableOpacity onPress={resetProgress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={[styles.resetText, { color: theme.subtext }]}>Reiniciar</Text>
         </TouchableOpacity>
@@ -275,13 +373,13 @@ export default function WorkoutsScreen() {
               <Ionicons
                 name="barbell-outline"
                 size={16}
-                color={isSelected ? '#FFFFFF' : theme.subtext}
+                color={isSelected ? '#061006' : theme.subtext}
                 style={{ marginRight: 6 }}
               />
               <Text
                 style={[
                   styles.routinePillText,
-                  { color: isSelected ? '#FFFFFF' : theme.text, fontWeight: isSelected ? '700' : '500' },
+                  { color: isSelected ? '#061006' : theme.text, fontWeight: isSelected ? '700' : '500' },
                 ]}
               >
                 {routine.name}
@@ -363,7 +461,7 @@ export default function WorkoutsScreen() {
           style={[styles.addExerciseButton, { backgroundColor: theme.tint }]}
           onPress={() => setModalVisible(true)}
         >
-          <Ionicons name="add" size={18} color="#FFFFFF" />
+          <Ionicons name="add" size={18} color="#061006" />
           <Text style={styles.addExerciseButtonText}>Añadir</Text>
         </TouchableOpacity>
       </View>
@@ -583,14 +681,90 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   headerBanner: {
+    minHeight: 270,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
     padding: 18,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
     marginBottom: 20,
+    backgroundColor: '#050806',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 8 },
       android: { elevation: 3 },
     }),
+  },
+  headerBannerImage: {
+    borderRadius: 20,
+    opacity: 0.68,
+  },
+  headerBannerScrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 5, 2, 0.48)',
+  },
+  myWeekSection: {
+    marginBottom: 22,
+    backgroundColor: 'transparent',
+  },
+  weekSectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    backgroundColor: 'transparent',
+  },
+  weekSectionSubtitle: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+  editWeekButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    borderRadius: 17,
+    borderWidth: 1,
+    gap: 2,
+  },
+  editWeekText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  weekCardsRow: {
+    paddingRight: 4,
+  },
+  weekPlanCard: {
+    width: 190,
+    padding: 13,
+    borderWidth: 1,
+    borderRadius: 15,
+    marginRight: 10,
+  },
+  weekPlanCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    backgroundColor: 'transparent',
+  },
+  weekDayBadge: {
+    minWidth: 38,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  weekDayBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  weekPlanFocus: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  weekPlanMeta: {
+    fontSize: 10,
+    marginTop: 5,
   },
   bannerRow: {
     flexDirection: 'row',
@@ -605,8 +779,27 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   heroTitle: {
-    fontSize: 22,
+    fontSize: 30,
     fontWeight: '800',
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  startButton: {
+    alignSelf: 'flex-start',
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 13,
+    gap: 8,
+    marginTop: 20,
+  },
+  startButtonText: {
+    color: '#061006',
+    fontSize: 12,
+    fontWeight: '900',
   },
   badgeGroup: {
     alignItems: 'flex-end',
@@ -724,7 +917,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addExerciseButtonText: {
-    color: '#FFFFFF',
+    color: '#061006',
     fontWeight: '700',
     fontSize: 13,
   },
@@ -929,7 +1122,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   saveModalButtonText: {
-    color: '#FFFFFF',
+    color: '#061006',
     fontSize: 15,
     fontWeight: '700',
   },

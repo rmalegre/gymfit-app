@@ -1,15 +1,22 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { onAuthStateChanged } from 'firebase/auth';
 import { Text } from './Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from './useColorScheme';
 import { isCloudSyncActive } from '@/services/gymStorage';
+import { auth } from '@/services/firebase';
 
 export function SyncBadge() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
-  const isCloud = isCloudSyncActive();
+  const [isCloud, setIsCloud] = useState(isCloudSyncActive());
+
+  useEffect(() => {
+    if (!auth) return;
+    return onAuthStateChanged(auth, () => setIsCloud(isCloudSyncActive()));
+  }, []);
 
   const handlePress = () => {
     if (isCloud) {
@@ -20,7 +27,7 @@ export function SyncBadge() {
     } else {
       Alert.alert(
         'Modo Local Activo',
-        'Tus datos se están guardando localmente en tu dispositivo. Para sincronizar con Firestore en la nube, edita tus claves en "services/firebaseConfig.ts" o agrega tus variables en un archivo .env'
+        'La app está en modo de consulta pública. Inicia sesión para guardar tus rutinas y progreso de forma privada en Firestore.'
       );
     }
   };
