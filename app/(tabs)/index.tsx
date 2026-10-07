@@ -9,6 +9,7 @@ import {
   Platform,
   Image,
   ImageBackground,
+  TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -256,7 +257,7 @@ export default function WorkoutsScreen() {
         imageStyle={styles.headerBannerImage}
         style={[styles.headerBanner, { borderColor: theme.cardBorder }]}
       >
-        <View pointerEvents="none" style={styles.headerBannerScrim} />
+        <View style={styles.headerBannerScrim} />
         <View style={styles.bannerRow}>
           <View style={{ flex: 1, backgroundColor: 'transparent' }}>
             <Text style={[styles.greeting, { color: theme.tint }]}>MÁS FUERTE QUE AYER</Text>
@@ -690,7 +691,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     backgroundColor: '#050806',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      ios: { boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.08)' },
       android: { elevation: 3 },
     }),
   },
@@ -701,6 +702,7 @@ const styles = StyleSheet.create({
   headerBannerScrim: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 5, 2, 0.48)',
+    pointerEvents: 'none',
   },
   myWeekSection: {
     marginBottom: 22,
@@ -782,9 +784,14 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '800',
     letterSpacing: -0.5,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    ...Platform.select<TextStyle & { textShadow?: string }>({
+      web: { textShadow: '0px 2px 8px rgba(0, 0, 0, 0.7)' },
+      default: {
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 8,
+      },
+    }),
   },
   startButton: {
     alignSelf: 'flex-start',

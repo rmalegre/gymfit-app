@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 10 },
+      ios: { boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.08)' },
       android: { elevation: 3 },
     }),
   },
@@ -286,10 +286,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     backgroundColor: '#080E0A',
-    shadowColor: '#39FF14',
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 0 },
+    boxShadow: '0px 0px 18px rgba(57, 255, 20, 0.16)',
   },
   digitalTime: {
     fontSize: 48,
